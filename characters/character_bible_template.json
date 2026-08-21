@@ -1,0 +1,18 @@
+{
+  "_comment": "Populate one of these per recurring character BEFORE story production, then insert into Supabase's characters table. Auto-created characters (scripts/produce.py get_or_create_character) are a fallback for one-off characters, not a substitute for deliberately designed recurring ones.",
+
+  "name": "Example: Lakshmi Akka",
+  "age": "45",
+  "gender": "female",
+  "appearance": "Rounded face, warm brown eyes, greying hair in a low bun, medium build",
+  "clothing": "Cotton saree, usually in earthy tones (mustard, maroon, olive), simple gold jewelry",
+  "personality": "Warm but sharp-tongued, quick with a comeback, secretly soft-hearted",
+  "voice_style": "meera",
+  "speech_style": "Mixes Kannada with occasional English words when annoyed or excited, slightly raised pitch for comedic emphasis",
+  "relationships": {
+    "example-other-character-id": "Neighbor, long-running friendly rivalry"
+  },
+  "reference_image_url": null,
+  "seed": null,
+  "prompt_template": "Flat 2D illustrated style, warm color palette. Middle-aged Kannada woman, rounded face, warm brown eyes, greying hair in a low bun, medium build, wearing a mustard-toned cotton saree with simple gold jewelry, expressive face, consistent character design sheet."
+}

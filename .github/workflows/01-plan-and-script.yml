@@ -1,0 +1,31 @@
+name: 01 - Plan and Script
+
+on:
+  schedule:
+    # 03:00 UTC = 08:30 IST. Adjust to whenever you want the daily concept
+    # ready for your morning Telegram review.
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}  # manual trigger for testing
+
+jobs:
+  plan-and-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run planner + script generator
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python plan_and_script.py

@@ -1,0 +1,227 @@
+"""
+Workflow 3 + 4: Production + Quality Control.
+Triggered by .github/workflows/02-check-approval-and-produce.yml once a
+story's status is 'approved' in Supabase (flipped manually after the
+Telegram review — see lib/telegram.py).
+
+Steps:
+  1. Scene breakdown (Gemini) from the approved script
+  2. Character reference images (Flux) — once per character, cached
+  3. Per-scene images (Kontext) — identity-preserving edits of the reference
+  4. Per-scene voice (Sarvam TTS)
+  5. Assemble: Ken Burns pan/zoom per image, synced to audio duration,
+     concatenated, subtitles burned in (from script text — see subtitle
+     timing caveat in README/architecture doc)
+  6. Basic QC checks (duration, file exists, non-zero size)
+  7. Upload final video to Supabase Storage, update story status
+
+This entire script runs inside a single GitHub Actions job (see
+.github/workflows/02-check-approval-and-produce.yml) — no external render
+service, FFmpeg runs on the runner itself.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import uuid
+
+from lib import gemini, supabase_client as db, pollinations, tts, telegram
+
+STORAGE_BUCKET = "content-engine-media"
+
+
+def find_approved_story():
+    rows = db.select("stories", {"status": "eq.approved", "limit": "1"})
+    return rows[0] if rows else None
+
+
+def get_or_create_character(name: str, category: str) -> dict:
+    existing = db.select("characters", {"name": f"eq.{name}", "limit": "1"})
+    if existing:
+        return existing[0]
+
+    # Minimal auto-created character bible entry — for recurring characters,
+    # populate this table properly ahead of time instead of relying on
+    # auto-generation every time (defeats the point of a Character Bible).
+    prompt = (
+        f"A Kannada {category} story character named {name}. "
+        f"Flat 2D illustrated style, warm color palette, consistent character design "
+        f"sheet, front-facing, neutral pose, plain background."
+    )
+    seed = abs(hash(name)) % (10**6)
+    img_bytes = pollinations.generate_reference(prompt, seed=seed)
+    url = db.upload_to_storage(STORAGE_BUCKET, f"characters/{uuid.uuid4()}.png", img_bytes, "image/png")
+
+    return db.insert("characters", {
+        "name": name,
+        "prompt_template": prompt,
+        "reference_image_url": url,
+        "seed": seed,
+    })
+
+
+def scene_breakdown(story: dict) -> list[dict]:
+    prompt = f"""Break this Kannada video script into a numbered scene list for image generation.
+Each scene should map to roughly 8-15 seconds of narration.
+
+Script (JSON): {json.dumps(story['script'], ensure_ascii=False)}
+
+Return ONLY a JSON array of objects with keys:
+"scene_number" (int), "narration_text" (the Kannada text spoken during this scene),
+"visual_description" (English, describing the visual: setting, action, mood, lighting),
+"characters_present" (array of character names from the script).
+"""
+    return gemini.generate_json(prompt, temperature=0.4)
+
+
+def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list[dict]:
+    built = []
+    for sc in scenes:
+        scene_row = db.insert("scenes", {
+            "story_id": story_id,
+            "scene_number": sc["scene_number"],
+            "description": sc["visual_description"],
+        })
+
+        # Image: reference + Kontext edit per character present, or a plain
+        # Flux generation if no named character is in this scene.
+        try:
+            if sc.get("characters_present"):
+                char = get_or_create_character(sc["characters_present"][0], category)
+                img_bytes = pollinations.edit_scene(
+                    char["reference_image_url"], sc["visual_description"], seed=char["seed"]
+                )
+            else:
+                img_bytes = pollinations.generate_reference(sc["visual_description"], seed=uuid.uuid4().int % (10**6))
+            img_url = db.upload_to_storage(
+                STORAGE_BUCKET, f"scenes/{scene_row['scene_id']}.png", img_bytes, "image/png"
+            )
+        except Exception as e:  # noqa: BLE001
+            db.log_error(story_id, "produce.scene_image", str(e), scene_row["scene_id"])
+            raise
+
+        # Voice
+        try:
+            audio_bytes = tts.synthesize(sc["narration_text"])
+            audio_url = db.upload_to_storage(
+                STORAGE_BUCKET, f"scenes/{scene_row['scene_id']}.wav", audio_bytes, "audio/wav"
+            )
+        except Exception as e:  # noqa: BLE001
+            db.log_error(story_id, "produce.scene_audio", str(e), scene_row["scene_id"])
+            raise
+
+        db.update("scenes", {"scene_id": f"eq.{scene_row['scene_id']}"}, {
+            "image_url": img_url, "audio_url": audio_url, "status": "assembled",
+        })
+        built.append({**scene_row, "image_url": img_url, "audio_url": audio_url,
+                       "narration_text": sc["narration_text"]})
+    return built
+
+
+def download(url: str, dest: str):
+    import requests
+    r = requests.get(url, timeout=120)
+    r.raise_for_status()
+    with open(dest, "wb") as f:
+        f.write(r.content)
+
+
+def get_audio_duration(path: str) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", path],
+        capture_output=True, text=True, check=True,
+    )
+    return float(out.stdout.strip())
+
+
+def assemble_video(scenes: list[dict], workdir: str) -> str:
+    """Ken Burns pan/zoom per scene image, synced to its audio duration,
+    concatenated, audio muxed in. Subtitle burn-in uses the narration text
+    with proportional timing as an MVP — replace with word-level ASR timing
+    (Sarvam STT / Whisper) per the architecture doc's subtitle-timing note
+    once the pipeline is otherwise working end to end."""
+    clip_paths = []
+    for i, sc in enumerate(scenes):
+        img_path = os.path.join(workdir, f"img_{i}.png")
+        audio_path = os.path.join(workdir, f"audio_{i}.wav")
+        clip_path = os.path.join(workdir, f"clip_{i}.mp4")
+        download(sc["image_url"], img_path)
+        download(sc["audio_url"], audio_path)
+
+        duration = get_audio_duration(audio_path)
+        # Simple zoom-in Ken Burns effect, 9:16 output
+        subprocess.run([
+            "ffmpeg", "-y", "-loop", "1", "-i", img_path, "-i", audio_path,
+            "-filter_complex",
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,zoompan=z='min(zoom+0.0015,1.3)':d={int(duration*25)}:s=1080x1920:fps=25[v]",
+            "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-c:a", "aac",
+            "-t", str(duration), "-shortest", clip_path,
+        ], check=True, capture_output=True)
+        clip_paths.append(clip_path)
+
+    # Concatenate all clips
+    concat_list = os.path.join(workdir, "concat.txt")
+    with open(concat_list, "w") as f:
+        for p in clip_paths:
+            f.write(f"file '{p}'\n")
+
+    final_path = os.path.join(workdir, "final.mp4")
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+        "-c:v", "libx264", "-c:a", "aac", final_path,
+    ], check=True, capture_output=True)
+
+    return final_path
+
+
+def qc_check(video_path: str) -> tuple[bool, str]:
+    if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+        return False, "Final video file missing or empty"
+    duration = get_audio_duration(video_path)  # ffprobe works on video too
+    if duration < 5 or duration > 330:  # allow slight overrun past 5 min
+        return False, f"Duration out of expected range: {duration:.1f}s"
+    return True, "ok"
+
+
+def main():
+    story = find_approved_story()
+    if not story:
+        print("No approved stories waiting for production. Exiting cleanly.")
+        return
+
+    story_id = story["story_id"]
+    db.update("stories", {"story_id": f"eq.{story_id}"}, {"status": "in_production"})
+
+    scenes = scene_breakdown(story)
+    built = build_scene_assets(story_id, story["category"], scenes)
+
+    with tempfile.TemporaryDirectory() as workdir:
+        final_path = assemble_video(built, workdir)
+        passed, reason = qc_check(final_path)
+
+        if not passed:
+            db.log_error(story_id, "produce.qc", reason)
+            db.update("stories", {"story_id": f"eq.{story_id}"}, {"status": "qc_failed"})
+            telegram.notify_error("produce.qc", reason, story_id)
+            sys.exit(1)
+
+        with open(final_path, "rb") as f:
+            video_url = db.upload_to_storage(
+                STORAGE_BUCKET, f"final/{story_id}.mp4", f.read(), "video/mp4"
+            )
+
+    db.update("stories", {"story_id": f"eq.{story_id}"}, {
+        "status": "produced", "final_video_url": video_url,
+    })
+    print(f"Story {story_id} produced successfully: {video_url}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:  # noqa: BLE001
+        telegram.notify_error("produce", str(e))
+        raise

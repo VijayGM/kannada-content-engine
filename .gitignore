@@ -1,0 +1,11 @@
+.env
+*.env
+__pycache__/
+*.pyc
+.DS_Store
+n8n/credentials/
+*.mp4
+*.wav
+*.png
+*.jpg
+/tmp/

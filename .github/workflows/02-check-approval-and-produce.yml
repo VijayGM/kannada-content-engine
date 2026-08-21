@@ -1,0 +1,42 @@
+name: 02 - Check Approval and Produce
+
+# This is the "Run 2" half of the two-run Human Approval handoff described
+# in the architecture doc §15: Run 1 (01-plan-and-script.yml) generates and
+# notifies via Telegram; you approve by flipping the story's status to
+# 'approved' in Supabase; this workflow picks it up on its next poll.
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # poll every 30 min — tune to your review cadence
+  workflow_dispatch: {}
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # generous ceiling for FFmpeg assembly of a 5-min video
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies (ffmpeg)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run production pipeline
+        working-directory: scripts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'sarvam' }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python produce.py
+
+      # Note: this script exits cleanly (exit 0) when there's nothing to
+      # produce, so frequent polling doesn't spam failure notifications.
