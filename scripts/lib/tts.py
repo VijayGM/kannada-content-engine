@@ -15,7 +15,7 @@ import requests
 PROVIDER = os.environ.get("TTS_PROVIDER", "sarvam")
 
 
-def synthesize(text: str, speaker: str = "meera", pace: float = 1.0) -> bytes:
+def synthesize(text: str, speaker: str = "pooja", pace: float = 1.0) -> bytes:
     """Returns raw audio bytes (wav) for the given Kannada text."""
     if PROVIDER == "sarvam":
         return _sarvam_tts(text, speaker, pace)
@@ -41,7 +41,8 @@ def _sarvam_tts(text: str, speaker: str, pace: float) -> bytes:
         },
         timeout=120,
     )
-    r.raise_for_status()
+    if not r.ok:
+        raise RuntimeError(f"Sarvam TTS {r.status_code} error: {r.text[:500]}")
     data = r.json()
     import base64
     return base64.b64decode(data["audios"][0])

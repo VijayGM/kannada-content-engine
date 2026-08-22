@@ -104,7 +104,13 @@ def get_permalink(media_id: str) -> str:
 
 
 def main():
+    if not IG_ACCOUNT_ID or not ACCESS_TOKEN:
+        print("IG_BUSINESS_ACCOUNT_ID or IG_ACCESS_TOKEN not set — skipping "
+              "publish. This is expected until Meta App Review is complete.")
+        return
+
     story = find_produced_story()
+
     if not story:
         print("No produced stories waiting to publish. Exiting cleanly.")
         return

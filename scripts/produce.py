@@ -89,9 +89,8 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
         try:
             if sc.get("characters_present"):
                 char = get_or_create_character(sc["characters_present"][0], category)
-                img_bytes = pollinations.edit_scene(
-                    char["reference_image_url"], sc["visual_description"], seed=char["seed"]
-                )
+                combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
+                img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
             else:
                 img_bytes = pollinations.generate_reference(sc["visual_description"], seed=uuid.uuid4().int % (10**6))
             img_url = db.upload_to_storage(
@@ -136,27 +135,56 @@ def get_audio_duration(path: str) -> float:
     return float(out.stdout.strip())
 
 
+def write_srt(text: str, duration: float, path: str, max_words: int = 6):
+    words = text.split()
+    chunks = [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)] or [text]
+    per_chunk = duration / len(chunks)
+
+    def fmt(t):
+        h, rem = divmod(t, 3600)
+        m, s = divmod(rem, 60)
+        ms = int((s % 1) * 1000)
+        return f"{int(h):02}:{int(m):02}:{int(s):02},{ms:03}"
+
+    with open(path, "w", encoding="utf-8") as f:
+        for i, chunk in enumerate(chunks):
+            start, end = i * per_chunk, (i + 1) * per_chunk
+            f.write(f"{i+1}\n{fmt(start)} --> {fmt(end)}\n{chunk}\n\n")
+
+    def fmt(t):
+        h, rem = divmod(t, 3600)
+        m, s = divmod(rem, 60)
+        ms = int((s % 1) * 1000)
+        return f"{int(h):02}:{int(m):02}:{int(s):02},{ms:03}"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"1\n{fmt(0)} --> {fmt(duration)}\n{text}\n")
+
+
 def assemble_video(scenes: list[dict], workdir: str) -> str:
-    """Ken Burns pan/zoom per scene image, synced to its audio duration,
-    concatenated, audio muxed in. Subtitle burn-in uses the narration text
-    with proportional timing as an MVP — replace with word-level ASR timing
-    (Sarvam STT / Whisper) per the architecture doc's subtitle-timing note
-    once the pipeline is otherwise working end to end."""
+    font_name = os.environ.get("SUBTITLE_FONT", "Noto Sans Kannada")
+
     clip_paths = []
     for i, sc in enumerate(scenes):
         img_path = os.path.join(workdir, f"img_{i}.png")
         audio_path = os.path.join(workdir, f"audio_{i}.wav")
+        srt_path = os.path.join(workdir, f"sub_{i}.srt")
         clip_path = os.path.join(workdir, f"clip_{i}.mp4")
         download(sc["image_url"], img_path)
         download(sc["audio_url"], audio_path)
 
         duration = get_audio_duration(audio_path)
-        # Simple zoom-in Ken Burns effect, 9:16 output
+        write_srt(sc["narration_text"], duration, srt_path)
+        srt_filter_path = srt_path.replace("\\", "/").replace(":", "\\:")
+
         subprocess.run([
             "ffmpeg", "-y", "-loop", "1", "-i", img_path, "-i", audio_path,
             "-filter_complex",
             f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-            f"crop=1080:1920,zoompan=z='min(zoom+0.0015,1.3)':d={int(duration*25)}:s=1080x1920:fps=25[v]",
+            f"crop=1080:1920,zoompan=z='min(zoom+0.0015,1.3)':d={int(duration*25)}:s=1080x1920:fps=25,"
+f"subtitles='{srt_filter_path}':force_style="
+f"'FontName={font_name},FontSize=16,PrimaryColour=&HFFFFFF&,"
+f"OutlineColour=&H000000&,BorderStyle=1,Outline=2,Alignment=2,"
+f"MarginV=100,MarginL=60,MarginR=60'[v]",
             "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-c:a", "aac",
             "-t", str(duration), "-shortest", clip_path,
         ], check=True, capture_output=True)
