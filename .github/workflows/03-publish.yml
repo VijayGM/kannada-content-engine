@@ -1,8 +1,8 @@
 name: 03 - Publish
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"  # poll every 30 min for stories with status='produced'
+ # schedule:
+ #   - cron: "*/30 * * * *"  # poll every 30 min for stories with status='produced'
   workflow_dispatch: {}
 
 jobs:
