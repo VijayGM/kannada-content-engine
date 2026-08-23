@@ -78,9 +78,17 @@ Title: {concept['title']}
 Premise: {concept['premise']}
 
 Requirements:
+Requirements:
 - Natural, conversational Kannada — including natural Kannada-English code-mixing where
   that's how people actually speak in this context (e.g. workplace, youth dialogue).
   Do NOT produce literal/textbook Kannada that a native speaker would find stilted.
+- CRITICAL: Write all Kannada words in actual Kannada script (ಕನ್ನಡ ಲಿಪಿ / Unicode Kannada
+  characters), NEVER in romanized/Latin-letter transliteration ("Kanglish", e.g. writing
+  "hogutini" instead of "ಹೋಗುತ್ತೀನಿ"). Code-mixed English words (like "boss", "office",
+  "deadline") may appear in Latin letters as loanwords within an otherwise Kannada-script
+  sentence — that's correct and intended. But Kannada words themselves must always be in
+  Kannada script. This matters because the downstream text-to-speech engine only correctly
+  pronounces actual Kannada script; romanized Kannada text produces broken or wrong audio.
 - Opening hook: 1-3 seconds, immediate curiosity (question, conflict, surprise, or similar).
 - Fast pacing, short conversational sentences, natural dialogue, escalating conflict.
 - Ending appropriate to the category: punchline, twist, emotional payoff, or moral.
