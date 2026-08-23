@@ -99,6 +99,20 @@ appearing in this script).
 """
     return gemini.generate_json(prompt, temperature=0.95)
 
+def has_kannada_script(text: str, min_ratio: float = 0.3) -> bool:
+    if not text:
+        return True
+    kannada_chars = sum(1 for c in text if "\u0c80" <= c <= "\u0cff")
+    alpha_chars = sum(1 for c in text if c.isalpha())
+    if alpha_chars == 0:
+        return True
+    return (kannada_chars / alpha_chars) >= min_ratio
+
+
+def script_uses_kannada_script(script: dict) -> bool:
+    parts = [script.get("opening_hook", ""), script.get("ending", "")]
+    parts.extend(script.get("body_beats", []))
+    return all(has_kannada_script(p) for p in parts)
 
 def score_retention(script: dict) -> float:
     prompt = f"""Score this Kannada video script's Instagram retention potential from 0-10.
@@ -133,6 +147,10 @@ def main():
     weakest = ""
     for attempt in range(1, MAX_REGENERATIONS + 2):
         script = generate_script(category, concept)
+        if not script_uses_kannada_script(script):
+            print(f"Attempt {attempt}: rejected — script came back in romanized "
+                  f"Latin letters instead of Kannada script. Regenerating.")
+            continue
         score, weakest = score_retention(script)
         print(f"Attempt {attempt}: retention score {score} (weakest: {weakest})")
         if score >= RETENTION_THRESHOLD:
