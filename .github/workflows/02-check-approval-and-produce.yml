@@ -1,14 +1,18 @@
 name: 02 - Check Approval and Produce
 
+# This is the "Run 2" half of the two-run Human Approval handoff described
+# in the architecture doc §15: Run 1 (01-plan-and-script.yml) generates and
+# notifies via Telegram; you approve by flipping the story's status to
+# 'approved' in Supabase; this workflow picks it up on its next poll.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/30 * * * *"  # poll every 30 min — tune to your review cadence
   workflow_dispatch: {}
 
 jobs:
   produce:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 180  # generous ceiling for FFmpeg assembly of a 5-min video
     steps:
       - uses: actions/checkout@v4
 
@@ -16,7 +20,7 @@ jobs:
         with:
           python-version: "3.12"
 
-        - name: Install system dependencies (ffmpeg + Kannada font)
+      - name: Install system dependencies (ffmpeg + Kannada font)
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-noto-ui-core fonts-noto-core
@@ -38,3 +42,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python produce.py
+
+      # Note: this script exits cleanly (exit 0) when there's nothing to
+      # produce, so frequent polling doesn't spam failure notifications.
