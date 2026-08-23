@@ -78,7 +78,6 @@ Title: {concept['title']}
 Premise: {concept['premise']}
 
 Requirements:
-Requirements:
 - Natural, conversational Kannada — including natural Kannada-English code-mixing where
   that's how people actually speak in this context (e.g. workplace, youth dialogue).
   Do NOT produce literal/textbook Kannada that a native speaker would find stilted.
