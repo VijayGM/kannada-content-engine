@@ -27,10 +27,12 @@ def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
             r.raise_for_status()
             data = r.json()
             if "candidates" not in data or not data["candidates"]:
-                block_reason = data.get("promptFeedback", {}).get("blockReason", "unknown")
+                                block_reason = data.get("promptFeedback", {}).get("blockReason", "unknown")
                 raise RuntimeError(
                     f"Gemini returned no candidates (likely safety-filtered). "
-                    f"blockReason={block_reason}. Full response: {json.dumps(data)[:500]}"
+                    f"blockReason={block_reason}. "
+                    f"Prompt that triggered it (first 400 chars): {prompt[:400]!r}. "
+                    f"Full response: {json.dumps(data)[:500]}"
                 )
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except requests.exceptions.HTTPError as e:
