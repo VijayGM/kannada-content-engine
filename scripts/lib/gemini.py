@@ -14,9 +14,6 @@ import time
 import requests
 
 API_KEY = os.environ["GEMINI_API_KEY"]
-# gemini-flash-lite-latest confirmed reliable during initial testing;
-# gemini-flash-latest hit repeated 503/429 errors under light, repeated use —
-# likely a busier model on the free tier. Re-verify if either changes.
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
@@ -26,6 +23,12 @@ def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature},
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+        ],
     }
     if json_mode:
         body["generationConfig"]["responseMimeType"] = "application/json"
@@ -41,7 +44,7 @@ def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
                 raise RuntimeError(
                     f"Gemini returned no candidates (likely safety-filtered). "
                     f"blockReason={block_reason}. "
-                    f"Prompt that triggered it (first 400 chars): {prompt[:400]!r}. "
+                    f"Full prompt that triggered it: {prompt!r}. "
                     f"Full response: {json.dumps(data)[:500]}"
                 )
             return data["candidates"][0]["content"]["parts"][0]["text"]
