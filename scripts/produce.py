@@ -35,12 +35,10 @@ def find_approved_story():
     rows = db.select("stories", {"status": "eq.approved", "limit": "1"})
     return rows[0] if rows else None
 
-
 def get_or_create_character(name: str, category: str) -> dict:
     existing = db.select("characters", {"name": f"eq.{name}", "limit": "1"})
     if existing:
         return existing[0]
-
     # Minimal auto-created character bible entry — for recurring characters,
     # populate this table properly ahead of time instead of relying on
     # auto-generation every time (defeats the point of a Character Bible).
@@ -52,14 +50,12 @@ def get_or_create_character(name: str, category: str) -> dict:
     seed = abs(hash(name)) % (10**6)
     img_bytes = pollinations.generate_reference(prompt, seed=seed)
     url = db.upload_to_storage(STORAGE_BUCKET, f"characters/{uuid.uuid4()}.png", img_bytes, "image/png")
-
     return db.insert("characters", {
         "name": name,
         "prompt_template": prompt,
         "reference_image_url": url,
         "seed": seed,
     })
-
 
 def scene_breakdown(story: dict) -> list[dict]:
     prompt = f"""Break this Kannada video script into a numbered scene list for image generation.
