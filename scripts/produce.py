@@ -39,20 +39,21 @@ def get_or_create_character(name: str, category: str) -> dict:
     existing = db.select("characters", {"name": f"eq.{name}", "limit": "1"})
     if existing:
         return existing[0]
-    # Minimal auto-created character bible entry — for recurring characters,
-    # populate this table properly ahead of time instead of relying on
-    # auto-generation every time (defeats the point of a Character Bible).
-    prompt = (
-        f"A Kannada {category} story character named {name}. "
-        f"Flat 2D illustrated style, warm color palette, consistent character design "
-        f"sheet, front-facing, neutral pose, plain background."
+
+    identity_descriptor = (
+        f"{name}, a character in a Kannada {category} story. "
+        f"Flat 2D illustrated style, warm color palette."
+    )
+    reference_prompt = (
+        f"{identity_descriptor} Consistent character design sheet, "
+        f"front-facing, neutral pose, plain background."
     )
     seed = abs(hash(name)) % (10**6)
-    img_bytes = pollinations.generate_reference(prompt, seed=seed)
+    img_bytes = pollinations.generate_reference(reference_prompt, seed=seed)
     url = db.upload_to_storage(STORAGE_BUCKET, f"characters/{uuid.uuid4()}.png", img_bytes, "image/png")
     return db.insert("characters", {
         "name": name,
-        "prompt_template": prompt,
+        "prompt_template": identity_descriptor,
         "reference_image_url": url,
         "seed": seed,
     })
