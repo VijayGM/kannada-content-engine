@@ -151,14 +151,6 @@ def write_srt(text: str, duration: float, path: str, max_words: int = 6):
             start, end = i * per_chunk, (i + 1) * per_chunk
             f.write(f"{i+1}\n{fmt(start)} --> {fmt(end)}\n{chunk}\n\n")
 
-    def fmt(t):
-        h, rem = divmod(t, 3600)
-        m, s = divmod(rem, 60)
-        ms = int((s % 1) * 1000)
-        return f"{int(h):02}:{int(m):02}:{int(s):02},{ms:03}"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"1\n{fmt(0)} --> {fmt(duration)}\n{text}\n")
-
 
 def assemble_video(scenes: list[dict], workdir: str) -> str:
     font_name = os.environ.get("SUBTITLE_FONT", "Noto Sans Kannada")
