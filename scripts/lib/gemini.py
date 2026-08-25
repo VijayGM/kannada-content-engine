@@ -1,5 +1,12 @@
 """
-Thin wrapper around the Gemini API free tier (Flash), used for all LLM steps.
+Thin wrapper around the Gemini API free tier (Flash), used for all LLM steps:
+concept generation, script writing, retention scoring, scene breakdown,
+captions/hashtags. Kept as one shared function so every caller logs cost the
+same way (Gemini's free tier costs Rs0, but we still log the call for
+volume/rate-limit visibility — see api_costs table).
+
+Required environment variable:
+  GEMINI_API_KEY
 """
 import os
 import json
@@ -7,12 +14,15 @@ import time
 import requests
 
 API_KEY = os.environ["GEMINI_API_KEY"]
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+# gemini-flash-lite-latest confirmed reliable during initial testing;
+# gemini-flash-latest hit repeated 503/429 errors under light, repeated use —
+# likely a busier model on the free tier. Re-verify if either changes.
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
 ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 
 def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
-             retries: int = 3, backoff: float = 10.0) -> str:
+             retries: int = 5, backoff: float = 15.0) -> str:
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature},
@@ -27,7 +37,7 @@ def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
             r.raise_for_status()
             data = r.json()
             if "candidates" not in data or not data["candidates"]:
-                                block_reason = data.get("promptFeedback", {}).get("blockReason", "unknown")
+                block_reason = data.get("promptFeedback", {}).get("blockReason", "unknown")
                 raise RuntimeError(
                     f"Gemini returned no candidates (likely safety-filtered). "
                     f"blockReason={block_reason}. "
@@ -44,7 +54,7 @@ def generate(prompt: str, json_mode: bool = False, temperature: float = 0.9,
                 last_err = e
                 continue
             raise
-    raise last_err
+    raise last_err  # pragma: no cover
 
 
 def generate_json(prompt: str, temperature: float = 0.9) -> dict:
