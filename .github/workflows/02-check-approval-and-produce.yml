@@ -36,6 +36,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-flash-lite-latest
           SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'sarvam' }}
           POLLINATIONS_API_KEY: ${{ secrets.POLLINATIONS_API_KEY }}
