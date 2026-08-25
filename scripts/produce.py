@@ -202,7 +202,6 @@ def qc_check(video_path: str) -> tuple[bool, str]:
         return False, f"Duration out of expected range: {duration:.1f}s"
     return True, "ok"
 
-
 def main():
     story = find_approved_story()
     if not story:
@@ -212,7 +211,24 @@ def main():
     story_id = story["story_id"]
     db.update("stories", {"story_id": f"eq.{story_id}"}, {"status": "in_production"})
 
-    scenes = scene_breakdown(story)
+    try:
+        scenes = scene_breakdown(story)
+    except RuntimeError as e:
+        if "PROHIBITED_CONTENT" in str(e) or "safety-filtered" in str(e):
+            db.log_error(story_id, "produce.scene_breakdown", str(e))
+            db.update("stories", {"story_id": f"eq.{story_id}"}, {"status": "blocked_by_safety_filter"})
+            telegram.notify_error(
+                "produce.scene_breakdown",
+                "This story was blocked by Gemini's safety filter (likely a false "
+                "positive on emotional content) and won't be retried automatically. "
+                "Review it in Supabase — you can rewrite and re-approve it, or let "
+                "tomorrow's fresh story take its place.",
+                story_id,
+            )
+            print(f"Story {story_id} blocked by safety filter, marked and skipped.")
+            return
+        raise
+
     built = build_scene_assets(story_id, story["category"], scenes)
 
     with tempfile.TemporaryDirectory() as workdir:
