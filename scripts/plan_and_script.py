@@ -1,21 +1,6 @@
 """
 Workflow 1 + 2 (combined): Content Planner + Script Generator.
 Triggered daily by .github/workflows/01-plan-and-script.yml
-
-Steps:
-  1. Pick today's category (calendar default, overridable by performance data later)
-  2. Pull recent stories in that category to avoid duplicate hooks/plots
-  3. Generate 3 concepts via Gemini, pick one
-  4. Generate the full Kannada script (hook / body / ending)
-  5. Score it for retention; regenerate once if below threshold
-  6. Save to Supabase with status 'pending_review'
-  7. Notify via Telegram for Human Approval Mode
-
-This is intentionally a straight-line script, not an n8n workflow file —
-see README.md for why (n8n is used for visual editing, but each scheduled
-run executes as a plain script inside the GitHub Actions container; the
-n8n workflow JSON that mirrors this logic lives in n8n/workflows/ for when
-you're ready to wire it up in the n8n editor).
 """
 import datetime
 import json
@@ -23,19 +8,17 @@ import sys
 
 from lib import gemini, supabase_client as db, telegram
 
-RETENTION_THRESHOLD = 7.0  # out of 10 — configurable
+RETENTION_THRESHOLD = 7.0
 MAX_REGENERATIONS = 2
 
-# Default weekly calendar from the brief §15 — override by editing this dict,
-# no code changes needed elsewhere.
 CONTENT_CALENDAR = {
-    0: "Family comedy",       # Monday
-    1: "Family",               # Tuesday
-    2: "Moral stories",        # Wednesday
-    3: "Relationship stories", # Thursday
-    4: "Workplace comedy",     # Friday
-    5: "Children's stories",   # Saturday
-    6: "Emotional stories",    # Sunday
+    0: "Family comedy",
+    1: "Family",
+    2: "Moral stories",
+    3: "Relationship stories",
+    4: "Workplace comedy",
+    5: "Children's stories",
+    6: "Emotional stories",
 }
 
 
@@ -88,6 +71,12 @@ Requirements:
   sentence — that's correct and intended. But Kannada words themselves must always be in
   Kannada script. This matters because the downstream text-to-speech engine only correctly
   pronounces actual Kannada script; romanized Kannada text produces broken or wrong audio.
+- CRITICAL: Every Kannada word must be spelled correctly and be a real, standard word —
+  double-check each word before including it. Do NOT invent non-standard word forms or
+  merge/duplicate syllables incorrectly (e.g. malformed conjugations with repeated letters
+  that aren't real Kannada). If uncertain whether a word or grammatical construction is
+  correct, prefer a simpler, more common phrasing you're confident is correct over a more
+  elaborate one that risks an error. Correctness matters more than sophistication here.
 - Opening hook: 1-3 seconds, immediate curiosity (question, conflict, surprise, or similar).
 - Fast pacing, short conversational sentences, natural dialogue, escalating conflict.
 - Ending appropriate to the category: punchline, twist, emotional payoff, or moral.
@@ -97,7 +86,8 @@ Return ONLY a JSON object with keys:
 story beat/scene), "ending" (Kannada text), "characters" (array of character names/roles
 appearing in this script).
 """
-    return gemini.generate_json(prompt, temperature=0.95)
+    return gemini.generate_json(prompt, temperature=0.75)
+
 
 def has_kannada_script(text: str, min_ratio: float = 0.3) -> bool:
     if not text:
@@ -114,6 +104,7 @@ def script_uses_kannada_script(script: dict) -> bool:
     parts.extend(script.get("body_beats", []))
     return all(has_kannada_script(p) for p in parts)
 
+
 def score_retention(script: dict) -> float:
     prompt = f"""Score this Kannada video script's Instagram retention potential from 0-10.
 Consider: hook strength (first 1-3 seconds), pacing, curiosity gap, emotional progression,
@@ -127,6 +118,20 @@ Return ONLY a JSON object: {{"score": <number 0-10>, "weakest_element": "<string
     return float(result.get("score", 0)), result.get("weakest_element", "")
 
 
+def check_kannada_correctness(script: dict) -> tuple[bool, list[str]]:
+    prompt = f"""You are a native Kannada speaker proofreading a script for spelling and
+grammar errors. Read every Kannada word carefully.
+
+Script (JSON): {json.dumps(script, ensure_ascii=False)}
+
+Return ONLY a JSON object: {{"has_errors": <true/false>, "issues": [<array of strings,
+each describing one specific misspelled or malformed word/phrase you found, empty array
+if none>]}}
+"""
+    result = gemini.generate_json(prompt, temperature=0.1)
+    return not result.get("has_errors", False), result.get("issues", [])
+
+
 def main():
     category = pick_category()
     print(f"Category for today: {category}")
@@ -137,20 +142,25 @@ def main():
         db.log_error(None, "plan_and_script.generate_concepts", "Gemini returned no concepts")
         sys.exit(1)
 
-    # MVP duplicate check: simple keyword-overlap heuristic, not embeddings —
-    # good enough at low volume, flagged in the architecture doc as a
-    # future upgrade once you have enough stories for embeddings to be worth it.
     concept = concepts[0]
 
     script = None
     score = 0.0
     weakest = ""
+    language_issues = []
     for attempt in range(1, MAX_REGENERATIONS + 2):
         script = generate_script(category, concept)
         if not script_uses_kannada_script(script):
             print(f"Attempt {attempt}: rejected — script came back in romanized "
                   f"Latin letters instead of Kannada script. Regenerating.")
             continue
+
+        correct, issues = check_kannada_correctness(script)
+        if not correct:
+            print(f"Attempt {attempt}: rejected — spelling/grammar issues found: {issues}. Regenerating.")
+            language_issues = issues
+            continue
+
         score, weakest = score_retention(script)
         print(f"Attempt {attempt}: retention score {score} (weakest: {weakest})")
         if score >= RETENTION_THRESHOLD:
@@ -172,7 +182,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception as e:  # noqa: BLE001 — top-level catch so failures are visible, not silent
+    except Exception as e:
         db.log_error(None, "plan_and_script", str(e))
         telegram.notify_error("plan_and_script", str(e))
         raise
