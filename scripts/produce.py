@@ -87,10 +87,13 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
             if sc.get("characters_present"):
                 char = get_or_create_character(sc["characters_present"][0], category)
                 combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
-                if char.get("reference_image_url"):
+                              if char.get("reference_image_url"):
+                    import requests
+                    ref_resp = requests.get(char["reference_image_url"], timeout=30)
+                    ref_resp.raise_for_status()
                     img_bytes = pollinations.edit_scene(
-                        image_url=char["reference_image_url"],
-                        prompt=combined_prompt,
+                        reference_image_bytes=ref_resp.content,
+                        scene_prompt=combined_prompt,
                         seed=char["seed"],
                     )
                 else:
