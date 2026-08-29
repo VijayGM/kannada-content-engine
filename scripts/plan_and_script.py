@@ -166,18 +166,37 @@ def main():
         if score >= RETENTION_THRESHOLD:
             break
 
-    story = db.insert("stories", {
-        "category": category,
-        "title": concept["title"],
-        "hook": script.get("opening_hook"),
-        "script": script,
-        "retention_score": score,
-        "status": "pending_review",
-    })
+    for attempt in range(max_retries):
+    script = gemini.generate_script(...)
+    score, language_issues, weakest = gemini.score_retention(script)
 
-    print(f"Saved story {story['story_id']} with status pending_review")
-    telegram.notify_story_for_review(story)
+    if score < threshold:
+        db.log_error(f"Script scored {score}, regenerating (attempt {attempt+1})")
+        continue
+    if language_issues:
+        db.log_error(f"Language issues: {language_issues}")
+        continue
 
+    # Both gates passed — now safe to persist
+
+    db.insert_script(
+        script,
+        status="pending_review",
+        retention_score=score,
+        language_issues=language_issues,
+        weakest=weakest,
+    )
+    break
+else:
+    # Loop exhausted without break — nothing passed
+    db.log_error(f"Script generation failed after {max_retries} attempts")
+    telegram.notify_error(f"Script QC failed after {max_retries} retries — no script saved")
+    return
+
+story["language_issues"] = language_issues
+story["weakest"] = weakest
+print(f"Saved story {story['story_id']} with status pending_review")
+telegram.notify_story_for_review(story)
 
 if __name__ == "__main__":
     try:
