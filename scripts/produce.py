@@ -83,19 +83,18 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
 
         # Image: reference + Kontext edit per character present, or a plain
         # Flux generation if no named character is in this scene.
-        try:
+                try:
             if sc.get("characters_present"):
-    char = get_or_create_character(sc["characters_present"][0], category)
-    combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
-    if char.get("reference_image_url"):
-        img_bytes = pollinations.edit_scene(
-            image_url=char["reference_image_url"],
-            prompt=combined_prompt,
-            seed=char["seed"],
-        )
-    else:
-        img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
-
+                char = get_or_create_character(sc["characters_present"][0], category)
+                combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
+                if char.get("reference_image_url"):
+                    img_bytes = pollinations.edit_scene(
+                        image_url=char["reference_image_url"],
+                        prompt=combined_prompt,
+                        seed=char["seed"],
+                    )
+                else:
+                    img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
             else:
                 img_bytes = pollinations.generate_reference(sc["visual_description"], seed=uuid.uuid4().int % (10**6))
             img_url = db.upload_to_storage(
