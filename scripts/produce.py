@@ -81,9 +81,9 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
             "description": sc["visual_description"],
         })
 
-        # Image: reference + Kontext edit per character present, or a plain
-        # Flux generation if no named character is in this scene.
-                try:
+# Image: reference + Kontext edit per character present, or a plain
+# Flux generation if no named character is in this scene.
+        try:
             if sc.get("characters_present"):
                 char = get_or_create_character(sc["characters_present"][0], category)
                 combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
@@ -103,7 +103,6 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
         except Exception as e:  # noqa: BLE001
             db.log_error(story_id, "produce.scene_image", str(e), scene_row["scene_id"])
             raise
-
         # Voice
         try:
             audio_bytes = tts.synthesize(sc["narration_text"])
