@@ -88,7 +88,6 @@ appearing in this script).
 """
     return gemini.generate_json(prompt, temperature=0.75)
 
-
 def has_kannada_script(text: str, min_ratio: float = 0.3) -> bool:
     if not text:
         return True
@@ -117,7 +116,6 @@ Return ONLY a JSON object: {{"score": <number 0-10>, "weakest_element": "<string
     result = gemini.generate_json(prompt, temperature=0.3)
     return float(result.get("score", 0)), result.get("weakest_element", "")
 
-
 def check_kannada_correctness(script: dict) -> tuple[bool, list[str]]:
     prompt = f"""You are a native Kannada speaker proofreading a script for spelling and
 grammar errors. Read every Kannada word carefully.
@@ -130,7 +128,6 @@ if none>]}}
 """
     result = gemini.generate_json(prompt, temperature=0.1)
     return not result.get("has_errors", False), result.get("issues", [])
-
 
 def main():
     category = pick_category()
@@ -148,6 +145,7 @@ def main():
     score = 0.0
     weakest = ""
     language_issues = []
+
     for attempt in range(1, MAX_REGENERATIONS + 2):
         script = generate_script(category, concept)
         if not script_uses_kannada_script(script):
@@ -165,38 +163,25 @@ def main():
         print(f"Attempt {attempt}: retention score {score} (weakest: {weakest})")
         if score >= RETENTION_THRESHOLD:
             break
+    else:
+        db.log_error(None, "plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
+        telegram.notify_error("plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
+        return
 
-    for attempt in range(max_retries):
-    script = gemini.generate_script(...)
-    score, language_issues, weakest = gemini.score_retention(script)
+    story = {
+        "story_id": None,
+        "category": category,
+        "title": concept.get("title", ""),
+        "hook": script.get("opening_hook", ""),
+        "script": script,
+        "retention_score": score,
+        "language_issues": language_issues,
+        "weakest": weakest,
+    }
 
-    if score < threshold:
-        db.log_error(f"Script scored {score}, regenerating (attempt {attempt+1})")
-        continue
-    if language_issues:
-        db.log_error(f"Language issues: {language_issues}")
-        continue
+    print(f"Script passed QC with score {score}")
+    telegram.notify_story_for_review(story)
 
-    # Both gates passed — now safe to persist
-
-    db.insert_script(
-        script,
-        status="pending_review",
-        retention_score=score,
-        language_issues=language_issues,
-        weakest=weakest,
-    )
-    break
-else:
-    # Loop exhausted without break — nothing passed
-    db.log_error(f"Script generation failed after {max_retries} attempts")
-    telegram.notify_error(f"Script QC failed after {max_retries} retries — no script saved")
-    return
-
-story["language_issues"] = language_issues
-story["weakest"] = weakest
-print(f"Saved story {story['story_id']} with status pending_review")
-telegram.notify_story_for_review(story)
 
 if __name__ == "__main__":
     try:
