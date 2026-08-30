@@ -187,10 +187,10 @@ def assemble_video(scenes: list[dict], workdir: str) -> str:
             "-filter_complex",
             f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
             f"crop=1080:1920,zoompan=z='min(zoom+0.0015,1.3)':d={int(duration*25)}:s=1080x1920:fps=25,"
-f"subtitles='{srt_filter_path}':force_style="
-f"'FontName={font_name},FontSize=16,PrimaryColour=&HFFFFFF&,"
-f"OutlineColour=&H000000&,BorderStyle=1,Outline=2,Alignment=2,"
-f"MarginV=100,MarginL=60,MarginR=60'[v]",
+            f"subtitles='{srt_filter_path}':force_style="
+            f"'FontName={font_name},FontSize=16,PrimaryColour=&HFFFFFF&,"
+            f"OutlineColour=&H000000&,BorderStyle=1,Outline=2,Alignment=2,"
+            f"MarginV=100,MarginL=60,MarginR=60'[v]",
             "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-c:a", "aac",
             "-t", str(duration), "-shortest", clip_path,
         ], check=True, capture_output=True)
