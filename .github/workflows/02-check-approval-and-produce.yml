@@ -23,7 +23,7 @@ jobs:
       - name: Install system dependencies (ffmpeg + Kannada font)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-ui-core fonts-noto-core
+          sudo apt-get install -y ffmpeg fonts-noto-ui-core fonts-noto-core fonts-noto-kannada
           sudo fc-cache -f -v
           fc-list | grep -i kannada || echo "WARNING: Kannada font not found by fontconfig after install"
 
