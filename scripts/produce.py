@@ -90,11 +90,18 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
                     import requests
                     ref_resp = requests.get(char["reference_image_url"], timeout=30)
                     ref_resp.raise_for_status()
-                    img_bytes = pollinations.edit_scene(
-                        reference_image_bytes=ref_resp.content,
-                        scene_prompt=combined_prompt,
-                        seed=char["seed"],
-                    )
+                    try:
+                        img_bytes = pollinations.edit_scene(
+                            reference_image_bytes=ref_resp.content,
+                            scene_prompt=combined_prompt,
+                            seed=char["seed"],
+                        )
+                    except RuntimeError as e:
+                        if "402" in str(e) or "PAYMENT_REQUIRED" in str(e):
+                            print(f"Kontext unavailable (no credits), falling back to Flux: {e}")
+                            img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
+                        else:
+                            raise
                 else:
                     img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
             else:
@@ -115,6 +122,7 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
         except Exception as e:  # noqa: BLE001
             db.log_error(story_id, "produce.scene_audio", str(e), scene_row["scene_id"])
             raise
+
 
         db.update("scenes", {"scene_id": f"eq.{scene_row['scene_id']}"}, {
             "image_url": img_url, "audio_url": audio_url, "status": "assembled",
