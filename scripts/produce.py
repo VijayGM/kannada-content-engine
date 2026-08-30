@@ -59,17 +59,45 @@ def get_or_create_character(name: str, category: str) -> dict:
     })
 
 def scene_breakdown(story: dict) -> list[dict]:
-    prompt = f"""Break this Kannada video script into a numbered scene list for image generation.
-Each scene should map to roughly 8-15 seconds of narration.
+    script = story["script"]
+    
+    # Build narration segments from the original script — preserve exact Kannada text
+    narration_segments = []
+    if script.get("opening_hook"):
+        narration_segments.append(script["opening_hook"])
+    narration_segments.extend(script.get("body_beats", []))
+    if script.get("ending"):
+        narration_segments.append(script["ending"])
+    
+    # Ask Gemini only for visual descriptions and character assignments
+    prompt = f"""You are given a Kannada video script broken into narration segments.
+For each segment, provide ONLY a visual description (in English) and list which characters appear.
 
-Script (JSON): {json.dumps(story['script'], ensure_ascii=False)}
+Narration segments (JSON array): {json.dumps(narration_segments, ensure_ascii=False)}
+Characters in this story: {json.dumps(script.get('characters', []), ensure_ascii=False)}
 
 Return ONLY a JSON array of objects with keys:
-"scene_number" (int), "narration_text" (the Kannada text spoken during this scene),
+"scene_number" (int, starting from 1),
 "visual_description" (English, describing the visual: setting, action, mood, lighting),
-"characters_present" (array of character names from the script).
+"characters_present" (array of character names from the story that appear in this scene).
+
+IMPORTANT: Do NOT modify or rewrite the narration text. It will be preserved separately.
 """
-    return gemini.generate_json(prompt, temperature=0.4)
+    
+    visual_data = gemini.generate_json(prompt, temperature=0.4)
+    
+    # Merge: pair each visual description with the original narration text
+    scenes = []
+    for i, segment in enumerate(narration_segments):
+        visual = visual_data[i] if i < len(visual_data) else {}
+        scenes.append({
+            "scene_number": i + 1,
+            "narration_text": segment,  # Original Kannada text, unchanged
+            "visual_description": visual.get("visual_description", f"Scene {i+1}"),
+            "characters_present": visual.get("characters_present", []),
+        })
+    
+    return scenes
 
 def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list[dict]:
     built = []
