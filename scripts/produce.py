@@ -303,7 +303,7 @@ def main():
             return
         raise
 
-    built = build_scene_assets(story_id, story["category"], scenes)
+    built = build_scene_assets(story_id, story["category"], scenes, story)
 
     with tempfile.TemporaryDirectory() as workdir:
         final_path = assemble_video(built, workdir)
