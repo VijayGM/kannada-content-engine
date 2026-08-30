@@ -124,7 +124,7 @@ IMPORTANT: Do NOT modify or rewrite the narration text. It will be preserved sep
     
     return scenes
 
-def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list[dict]:
+def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: dict) -> list[dict]:
     built = []
     for sc in scenes:
         scene_row = db.insert("scenes", {
@@ -137,7 +137,11 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict]) -> list
         # Flux generation if no named character is in this scene.
         try:
             if sc.get("characters_present"):
-                char = get_or_create_character(sc["characters_present"][0], category)
+                char = get_or_create_character(
+    sc["characters_present"][0],
+    category,
+    script_context=json.dumps(story.get("script", {}), ensure_ascii=False),
+)
                 combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
                 if char.get("reference_image_url"):
                     import requests
