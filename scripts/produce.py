@@ -35,28 +35,53 @@ def find_approved_story():
     rows = db.select("stories", {"status": "eq.approved", "limit": "1"})
     return rows[0] if rows else None
 
-def get_or_create_character(name: str, category: str) -> dict:
+def get_or_create_character(name: str, category: str, script_context: str = "") -> dict:
     existing = db.select("characters", {"name": f"eq.{name}", "limit": "1"})
     if existing:
         return existing[0]
 
+    # Generate detailed character profile via Gemini
+    profile_prompt = f"""Create a detailed visual profile for this character:
+Name/Role: {name}
+Story category: {category}
+Context from script: {script_context[:500] if script_context else "No additional context"}
+
+Return JSON with keys:
+"age_range" (e.g., "40s", "young adult"),
+"physical_features" (hair, build, distinctive features),
+"clothing" (typical outfit for this character),
+"personality_traits" (2-3 traits that affect visual expression),
+"visual_style" (art style description for consistency)
+"""
+    profile = gemini.generate_json(profile_prompt, temperature=0.5)
+
     identity_descriptor = (
-        f"{name}, a character in a Kannada {category} story. "
-        f"Flat 2D illustrated style, warm color palette."
+        f"{name}, {profile.get('age_range', 'adult')}, "
+        f"{profile.get('physical_features', '')}, "
+        f"wearing {profile.get('clothing', 'simple clothing')}. "
+        f"Style: {profile.get('visual_style', 'Flat 2D illustrated, warm colors')}. "
+        f"Personality: {profile.get('personality_traits', '')}."
     )
+
     reference_prompt = (
-        f"{identity_descriptor} Consistent character design sheet, "
-        f"front-facing, neutral pose, plain background."
+        f"{identity_descriptor} Character design sheet, front-facing view, "
+        f"neutral expression, full body visible, plain background, consistent proportions."
     )
-    seed = abs(hash(name)) % (10**6)
+    
+    import hashlib
+    seed = int(hashlib.md5(name.encode()).hexdigest(), 16) % (10**6)
+    
     img_bytes = pollinations.generate_reference(reference_prompt, seed=seed)
     url = db.upload_to_storage(STORAGE_BUCKET, f"characters/{uuid.uuid4()}.png", img_bytes, "image/png")
+    
     return db.insert("characters", {
         "name": name,
         "prompt_template": identity_descriptor,
         "reference_image_url": url,
         "seed": seed,
+        "visual_profile": profile,
     })
+
 
 def scene_breakdown(story: dict) -> list[dict]:
     script = story["script"]
