@@ -168,8 +168,19 @@ def main():
         telegram.notify_error("plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
         return
 
+    story_row = db.insert("stories", {
+        "category": category,
+        "title": concept.get("title", ""),
+        "hook": script.get("opening_hook", ""),
+        "script": script,
+        "retention_score": score,
+        "language_issues": language_issues,
+        "weakest": weakest,
+        "status": "pending_review",
+    })
+
     story = {
-        "story_id": None,
+        "story_id": story_row["story_id"],
         "category": category,
         "title": concept.get("title", ""),
         "hook": script.get("opening_hook", ""),
@@ -179,7 +190,7 @@ def main():
         "weakest": weakest,
     }
 
-    print(f"Script passed QC with score {score}")
+    print(f"Script passed QC with score {score}, story_id: {story['story_id']}")
     telegram.notify_story_for_review(story)
 
 
