@@ -5,6 +5,7 @@ Triggered daily by .github/workflows/01-plan-and-script.yml
 import datetime
 import json
 import sys
+import unicodedata
 
 from lib import gemini, supabase_client as db, telegram
 
@@ -20,6 +21,21 @@ CONTENT_CALENDAR = {
     5: "Children's stories",
     6: "Emotional stories",
 }
+
+
+def safe_kannada(text: str) -> str:
+    if not text:
+        return text
+    cleaned = []
+    for ch in text:
+        cp = ord(ch)
+        if ch in ('\n', '\t', ' ') or (cp >= 0x20 and unicodedata.category(ch)[0] != 'C'):
+            cleaned.append(ch)
+        elif 0x0C80 <= cp <= 0x0CFF:
+            cleaned.append(ch)
+        else:
+            cleaned.append('\uFFFD')
+    return ''.join(cleaned)
 
 
 def pick_category() -> str:
@@ -77,6 +93,10 @@ Requirements:
   that aren't real Kannada). If uncertain whether a word or grammatical construction is
   correct, prefer a simpler, more common phrasing you're confident is correct over a more
   elaborate one that risks an error. Correctness matters more than sophistication here.
+- Respond only in natural, grammatically correct Kannada (ಕನ್ನಡ).
+- Use proper Kannada script (U+0C80–U+0CFF).
+- Do not transliterate Kannada words into Latin letters.
+- Ensure virama (halant) conjuncts are correctly formed.
 - Opening hook: 1-3 seconds, immediate curiosity (question, conflict, surprise, or similar).
 - Fast pacing, short conversational sentences, natural dialogue, escalating conflict.
 - Ending appropriate to the category: punchline, twist, emotional payoff, or moral.
@@ -87,6 +107,7 @@ story beat/scene), "ending" (Kannada text), "characters" (array of character nam
 appearing in this script).
 """
     return gemini.generate_json(prompt, temperature=0.75)
+
 
 def has_kannada_script(text: str, min_ratio: float = 0.3) -> bool:
     if not text:
@@ -116,6 +137,7 @@ Return ONLY a JSON object: {{"score": <number 0-10>, "weakest_element": "<string
     result = gemini.generate_json(prompt, temperature=0.3)
     return float(result.get("score", 0)), result.get("weakest_element", "")
 
+
 def check_kannada_correctness(script: dict) -> tuple[bool, list[str]]:
     prompt = f"""You are a native Kannada speaker proofreading a script for spelling and
 grammar errors. Read every Kannada word carefully.
@@ -124,10 +146,11 @@ Script (JSON): {json.dumps(script, ensure_ascii=False)}
 
 Return ONLY a JSON object: {{"has_errors": <true/false>, "issues": [<array of strings,
 each describing one specific misspelled or malformed word/phrase you found, empty array
-if none>]}}
+if none]}}
 """
     result = gemini.generate_json(prompt, temperature=0.1)
     return not result.get("has_errors", False), result.get("issues", [])
+
 
 def main():
     category = pick_category()
@@ -167,6 +190,10 @@ def main():
         db.log_error(None, "plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
         telegram.notify_error("plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
         return
+
+    script["opening_hook"] = safe_kannada(script.get("opening_hook", ""))
+    script["body_beats"] = [safe_kannada(b) for b in script.get("body_beats", [])]
+    script["ending"] = safe_kannada(script.get("ending", ""))
 
     story_row = db.insert("stories", {
         "category": category,
