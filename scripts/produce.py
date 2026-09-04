@@ -97,19 +97,16 @@ Return JSON with keys:
         "visual_profile": profile,
     })
 
-
 def scene_breakdown(story: dict) -> list[dict]:
     script = story["script"]
     
-    # Build narration segments from the original script — preserve exact Kannada text
-        narration_segments = []
+    narration_segments = []
     if script.get("opening_hook"):
         narration_segments.append(safe_kannada(script["opening_hook"]))
     narration_segments.extend(safe_kannada(b) for b in script.get("body_beats", []))
     if script.get("ending"):
         narration_segments.append(safe_kannada(script["ending"]))
     
-    # Ask Gemini only for visual descriptions and character assignments
     prompt = f"""You are given a Kannada video script broken into narration segments.
 For each segment, provide ONLY a visual description (in English) and list which characters appear.
 
@@ -126,13 +123,12 @@ IMPORTANT: Do NOT modify or rewrite the narration text. It will be preserved sep
     
     visual_data = gemini.generate_json(prompt, temperature=0.4)
     
-    # Merge: pair each visual description with the original narration text
     scenes = []
     for i, segment in enumerate(narration_segments):
         visual = visual_data[i] if i < len(visual_data) else {}
         scenes.append({
             "scene_number": i + 1,
-            "narration_text": segment,  # Original Kannada text, unchanged
+            "narration_text": segment,
             "visual_description": visual.get("visual_description", f"Scene {i+1}"),
             "characters_present": visual.get("characters_present", []),
         })
