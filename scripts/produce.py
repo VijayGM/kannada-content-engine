@@ -102,12 +102,12 @@ def scene_breakdown(story: dict) -> list[dict]:
     script = story["script"]
     
     # Build narration segments from the original script — preserve exact Kannada text
-    narration_segments = []
+        narration_segments = []
     if script.get("opening_hook"):
-        narration_segments.append(script["opening_hook"])
-    narration_segments.extend(script.get("body_beats", []))
+        narration_segments.append(safe_kannada(script["opening_hook"]))
+    narration_segments.extend(safe_kannada(b) for b in script.get("body_beats", []))
     if script.get("ending"):
-        narration_segments.append(script["ending"])
+        narration_segments.append(safe_kannada(script["ending"]))
     
     # Ask Gemini only for visual descriptions and character assignments
     prompt = f"""You are given a Kannada video script broken into narration segments.
@@ -187,7 +187,7 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: 
 
         # Voice
         try:
-            audio_bytes = tts.synthesize(sc["narration_text"])
+            audio_bytes = tts.synthesize(safe_kannada(sc["narration_text"]))
             audio_url = db.upload_to_storage(
                 STORAGE_BUCKET, f"scenes/{scene_row['scene_id']}.wav", audio_bytes, "audio/wav"
             )
@@ -222,6 +222,7 @@ def get_audio_duration(path: str) -> float:
 
 
 def write_srt(text: str, duration: float, path: str, max_words: int = 6):
+    text = safe_kannada(text)
     words = text.split()
     chunks = [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)] or [text]
     per_chunk = duration / len(chunks)
