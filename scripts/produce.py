@@ -27,6 +27,21 @@ import tempfile
 import uuid
 
 from lib import gemini, supabase_client as db, pollinations, tts, telegram
+import unicodedata
+
+def safe_kannada(text: str) -> str:
+    if not text:
+        return text
+    cleaned = []
+    for ch in text:
+        cp = ord(ch)
+        if ch in ('\n', '\t', ' ') or (cp >= 0x20 and unicodedata.category(ch)[0] != 'C'):
+            cleaned.append(ch)
+        elif 0x0C80 <= cp <= 0x0CFF:
+            cleaned.append(ch)
+        else:
+            cleaned.append('\uFFFD')
+    return ''.join(cleaned)
 
 STORAGE_BUCKET = "content-engine-media"
 
