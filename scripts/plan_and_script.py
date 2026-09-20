@@ -5,9 +5,9 @@ Triggered daily by .github/workflows/01-plan-and-script.yml
 import datetime
 import json
 import sys
-import unicodedata
 
 from lib import gemini, supabase_client as db, telegram
+from lib.kannada_text import sanitize_and_validate
 
 RETENTION_THRESHOLD = 7.0
 MAX_REGENERATIONS = 2
@@ -22,20 +22,6 @@ CONTENT_CALENDAR = {
     6: "Emotional stories",
 }
 
-
-def safe_kannada(text: str) -> str:
-    if not text:
-        return text
-    cleaned = []
-    for ch in text:
-        cp = ord(ch)
-        if ch in ('\n', '\t', ' ') or (cp >= 0x20 and unicodedata.category(ch)[0] != 'C'):
-            cleaned.append(ch)
-        elif 0x0C80 <= cp <= 0x0CFF:
-            cleaned.append(ch)
-        else:
-            cleaned.append('\uFFFD')
-    return ''.join(cleaned)
 
 
 def pick_category() -> str:
@@ -109,7 +95,7 @@ appearing in this script).
     return gemini.generate_json(prompt, temperature=0.75)
 
 
-def has_kannada_script(text: str, min_ratio: float = 0.3) -> bool:
+def has_kannada_script(text: str, min_ratio: float = 0.1) -> bool:
     if not text:
         return True
     kannada_chars = sum(1 for c in text if "\u0c80" <= c <= "\u0cff")
@@ -191,9 +177,9 @@ def main():
         telegram.notify_error("plan_and_script", f"Script QC failed after {MAX_REGENERATIONS + 1} retries — no script saved")
         return
 
-    script["opening_hook"] = safe_kannada(script.get("opening_hook", ""))
-    script["body_beats"] = [safe_kannada(b) for b in script.get("body_beats", [])]
-    script["ending"] = safe_kannada(script.get("ending", ""))
+    script["opening_hook"] = sanitize_and_validate(script.get("opening_hook", ""))
+    script["body_beats"] = [sanitize_and_validate(b) for b in script.get("body_beats", [])]
+    script["ending"] = sanitize_and_validate(script.get("ending", ""))
 
     story_row = db.insert("stories", {
         "category": category,
