@@ -27,21 +27,7 @@ import tempfile
 import uuid
 
 from lib import gemini, supabase_client as db, pollinations, tts, telegram
-import unicodedata
-
-def safe_kannada(text: str) -> str:
-    if not text:
-        return text
-    cleaned = []
-    for ch in text:
-        cp = ord(ch)
-        if ch in ('\n', '\t', ' ') or (cp >= 0x20 and unicodedata.category(ch)[0] != 'C'):
-            cleaned.append(ch)
-        elif 0x0C80 <= cp <= 0x0CFF:
-            cleaned.append(ch)
-        else:
-            cleaned.append('\uFFFD')
-    return ''.join(cleaned)
+from lib.kannada_text import sanitize_and_validate
 
 STORAGE_BUCKET = "content-engine-media"
 
@@ -102,10 +88,10 @@ def scene_breakdown(story: dict) -> list[dict]:
     
     narration_segments = []
     if script.get("opening_hook"):
-        narration_segments.append(safe_kannada(script["opening_hook"]))
-    narration_segments.extend(safe_kannada(b) for b in script.get("body_beats", []))
+        narration_segments.append(sanitize_and_validate(script["opening_hook"]))
+    narration_segments.extend(sanitize_and_validate(b) for b in script.get("body_beats", []))
     if script.get("ending"):
-        narration_segments.append(safe_kannada(script["ending"]))
+        narration_segments.append(sanitize_and_validate(script["ending"]))
     
     prompt = f"""You are given a Kannada video script broken into narration segments.
 For each segment, provide ONLY a visual description (in English) and list which characters appear.
@@ -183,7 +169,7 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: 
 
         # Voice
         try:
-            audio_bytes = tts.synthesize(safe_kannada(sc["narration_text"]))
+            audio_bytes = tts.synthesize(sanitize_and_validate(sc["narration_text"]))
             audio_url = db.upload_to_storage(
                 STORAGE_BUCKET, f"scenes/{scene_row['scene_id']}.wav", audio_bytes, "audio/wav"
             )
@@ -218,7 +204,7 @@ def get_audio_duration(path: str) -> float:
 
 
 def write_srt(text: str, duration: float, path: str, max_words: int = 6):
-    text = safe_kannada(text)
+    text = sanitize_and_validate(text)
     words = text.split()
     chunks = [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)] or [text]
     per_chunk = duration / len(chunks)
@@ -229,7 +215,7 @@ def write_srt(text: str, duration: float, path: str, max_words: int = 6):
         ms = int((s % 1) * 1000)
         return f"{int(h):02}:{int(m):02}:{int(s):02},{ms:03}"
 
-    with open(path, "w", encoding="utf-8-sig") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         for i, chunk in enumerate(chunks):
             start, end = i * per_chunk, (i + 1) * per_chunk
             f.write(f"{i+1}\n{fmt(start)} --> {fmt(end)}\n{chunk}\n\n")
