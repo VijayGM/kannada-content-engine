@@ -1,0 +1,100 @@
+import unittest
+import unicodedata
+
+from scripts.lib.kannada_text import sanitize_and_validate, sanitize_kannada
+
+
+class KannadaTextTests(unittest.TestCase):
+    def test_normal_kannada_is_preserved(self):
+        text = "ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಕನ್ನಡ ಸರಿಯಾಗಿ ಕಾಣಬೇಕು."
+        self.assertEqual(sanitize_kannada(text), unicodedata.normalize("NFC", text))
+        sanitize_and_validate(text)
+
+    def test_zwj_and_zwj_sequences_are_not_replaced(self):
+        # ZWJ is a valid format character for complex-script shaping.
+        text = "ಕನ್ನಡ\u200dಪರೀಕ್ಷೆ"
+        cleaned = sanitize_kannada(text)
+        self.assertIn("\u200d", cleaned)
+        self.assertNotIn("\ufffd", cleaned)
+
+    def test_zwnj_is_not_replaced(self):
+        text = "ಕನ್ನಡ\u200cಪರೀಕ್ಷೆ"
+        cleaned = sanitize_kannada(text)
+        self.assertIn("\u200c", cleaned)
+        self.assertNotIn("\ufffd", cleaned)
+
+    def test_code_mixing_and_symbols_are_preserved(self):
+        text = "ಇದು Kannada + ₹1,000 — 2026!"
+        cleaned = sanitize_and_validate(text)
+        self.assertIn("Kannada", cleaned)
+        self.assertIn("₹", cleaned)
+        self.assertIn("2026", cleaned)
+
+    def test_controls_are_removed_not_replaced(self):
+        text = "ಕನ್ನಡ\x00 ಪರೀಕ್ಷೆ"
+        cleaned = sanitize_and_validate(text)
+        self.assertNotIn("\ufffd", cleaned)
+        self.assertNotIn("\x00", cleaned)
+
+    def test_existing_replacement_character_fails(self):
+        with self.assertRaises(ValueError):
+            sanitize_kannada("ಕನ್ನಡ   ಪರೀಕ್ಷೆ")
+
+    def test_romanized_kannada_fails_validation(self):
+        with self.assertRaises(ValueError):
+            sanitize_and_validate("nanna hesaru vijay")
+
+    def test_nfc_normalization(self):
+        text = unicodedata.normalize("NFD", "ಕನ್ನಡ ಪರೀಕ್ಷೆ")
+        cleaned = sanitize_and_validate(text)
+        self.assertEqual(cleaned, unicodedata.normalize("NFC", text))
+
+
+    def test_ffmpeg_kannada_subtitle_render_smoke(self):
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            self.skipTest("ffmpeg is not installed")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            srt = tmp / "test.srt"
+            out = tmp / "frame.png"
+
+            srt.write_text(
+                "1\n00:00:00,000 --> 00:00:02,000\n"
+                "ಕನ್ನಡ ಪರೀಕ್ಷೆ — ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಸರಿಯಾಗಿ ಕಾಣಬೇಕು.\n\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    ffmpeg, "-y",
+                    "-f", "lavfi", "-i", "color=c=black:s=1080x1920:d=2:r=25",
+                    "-vf",
+                    f"subtitles='{srt}':force_style="
+                    "'FontName=Noto Sans Kannada,FontSize=42,"
+                    "PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+                    "BorderStyle=1,Outline=2,Alignment=2,MarginV=150'",
+                    "-frames:v", "1",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(out.exists())
+            combined = result.stdout + result.stderr
+            self.assertIn("Noto Sans Kannada", combined)
+            # Current Ubuntu FFmpeg/libass stack should report HarfBuzz shaping.
+            self.assertIn("HarfBuzz", combined)
+
+
+if __name__ == "__main__":
+    unittest.main()
