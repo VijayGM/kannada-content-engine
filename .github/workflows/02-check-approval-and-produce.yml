@@ -23,12 +23,13 @@ jobs:
       - name: Install system dependencies (ffmpeg + Kannada font)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-ui-core fonts-noto-core
-          mkdir -p ~/.fonts
-          curl -L -o ~/.fonts/NotoSansKannada-Regular.ttf \
-            "https://github.com/google/fonts/raw/main/ofl/notosanskannada/NotoSansKannada%5Bwdth%2Cwght%5D.ttf"
-          sudo fc-cache -f -v
-          fc-list | grep -i kannada || echo "WARNING: Kannada font not found"
+          sudo apt-get install -y ffmpeg fonts-noto-extra fonts-knda
+          mkdir -p fonts
+          FONT_FILE="$(fc-match -f '%{file}' 'Noto Sans Kannada' | head -n 1)"
+          test -n "$FONT_FILE" && test -f "$FONT_FILE"
+          cp "$FONT_FILE" fonts/NotoSansKannada-Regular.ttf
+          fc-cache -f -v
+          fc-list | grep -i 'Noto Sans Kannada' | head -n 5
 
       - name: Install python dependencies
         run: pip install -r requirements.txt
