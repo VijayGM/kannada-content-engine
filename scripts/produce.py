@@ -141,81 +141,86 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: 
 )
                 combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
                 if char.get("reference_image_url"):
-                    import requests
-                
-                    ref_url = char["reference_image_url"]
-                    print("CHARACTER REFERENCE URL:", ref_url)
-                
-                    ref_resp = requests.get(
-                        ref_url,
-                        timeout=60,
-                    )
-                    
-                    if not ref_resp.ok:
-                        print("CHARACTER REFERENCE MISSING")
-                        print("HTTP STATUS:", ref_resp.status_code)
-                        print("RESPONSE BODY:", ref_resp.text[:1000])
-                    
-                        # Reference image no longer exists in Supabase Storage.
-                        # Regenerate it using the existing character identity and seed.
-                        print("REGENERATING CHARACTER REFERENCE:", char["name"])
-                    
-                        reference_prompt = (
-                            f"{char['prompt_template']} "
-                            "Character design sheet, front-facing view, "
-                            "neutral expression, full body visible, plain background, "
-                            "consistent proportions."
-                        )
-                    
-                        img_bytes = pollinations.generate_reference(
-                            reference_prompt,
-                            seed=char["seed"],
-                        )
-                    
-                        new_path = f"characters/{uuid.uuid4()}.png"
-                    
-                        new_url = db.upload_to_storage(
-                            STORAGE_BUCKET,
-                            new_path,
-                            img_bytes,
-                            "image/png",
-                        )
-                    
-                        db.update(
-                            "characters",
-                            {"character_id": f"eq.{char['character_id']}"},
-                            {
-                                "reference_image_url": new_url,
-                                "reference_image_path": new_path,
-                            },
-                        )
-                    
-                        # Use the regenerated image immediately.
-                        ref_resp = requests.get(
-                            new_url,
-                            timeout=60,
-                        )
-                    
-                        ref_resp.raise_for_status()
+    import requests
 
-    print("CHARACTER REFERENCE REGENERATED:", new_url)
+    ref_url = char["reference_image_url"]
+    print("CHARACTER REFERENCE URL:", ref_url)
 
+    ref_resp = requests.get(
+        ref_url,
+        timeout=60,
+    )
+
+    if not ref_resp.ok:
+        print("CHARACTER REFERENCE MISSING")
+        print("HTTP STATUS:", ref_resp.status_code)
+        print("RESPONSE BODY:", ref_resp.text[:1000])
+
+        print("REGENERATING CHARACTER REFERENCE:", char["name"])
+
+        reference_prompt = (
+            f"{char['prompt_template']} "
+            "Character design sheet, front-facing view, "
+            "neutral expression, full body visible, plain background, "
+            "consistent proportions."
+        )
+
+        img_bytes = pollinations.generate_reference(
+            reference_prompt,
+            seed=char["seed"],
+        )
+
+        new_path = f"characters/{uuid.uuid4()}.png"
+
+        new_url = db.upload_to_storage(
+            STORAGE_BUCKET,
+            new_path,
+            img_bytes,
+            "image/png",
+        )
+
+        db.update(
+            "characters",
+            {"character_id": f"eq.{char['character_id']}"},
+            {
+                "reference_image_url": new_url,
+            },
+        )
+
+        ref_resp = requests.get(
+            new_url,
+            timeout=60,
+        )
+
+        ref_resp.raise_for_status()
+
+        print("CHARACTER REFERENCE REGENERATED:", new_url)
+    else:
+        ref_resp.raise_for_status()
+
+    try:
+        img_bytes = pollinations.edit_scene(
+            reference_image_bytes=ref_resp.content,
+            scene_prompt=combined_prompt,
+            seed=char["seed"],
+        )
+    except RuntimeError as e:
+        if "402" in str(e) or "PAYMENT_REQUIRED" in str(e):
+            print(
+                f"Kontext unavailable (no credits), "
+                f"falling back to Flux: {e}"
+            )
+            img_bytes = pollinations.generate_reference(
+                combined_prompt,
+                seed=char["seed"],
+            )
+        else:
+            raise
 else:
-    ref_resp.raise_for_status()
-                    try:
-                        img_bytes = pollinations.edit_scene(
-                            reference_image_bytes=ref_resp.content,
-                            scene_prompt=combined_prompt,
-                            seed=char["seed"],
-                        )
-                    except RuntimeError as e:
-                        if "402" in str(e) or "PAYMENT_REQUIRED" in str(e):
-                            print(f"Kontext unavailable (no credits), falling back to Flux: {e}")
-                            img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
-                        else:
-                            raise
-                else:
-                    img_bytes = pollinations.generate_reference(combined_prompt, seed=char["seed"])
+    img_bytes = pollinations.generate_reference(
+        combined_prompt,
+        seed=char["seed"],
+    )
             else:
                 img_bytes = pollinations.generate_reference(sc["visual_description"], seed=uuid.uuid4().int % (10**6))
             img_url = db.upload_to_storage(
