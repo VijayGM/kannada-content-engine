@@ -675,7 +675,7 @@ def get_audio_duration(path: str) -> float:
 
 def _subtitle_chunks(
     text: str,
-    max_words: int = 6,
+    max_words: int = 4,
 ) -> list[str]:
     """
     Split ONLY on whitespace.
