@@ -142,14 +142,19 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: 
                 combined_prompt = f"{char['prompt_template']}. Scene: {sc['visual_description']}"
                 if char.get("reference_image_url"):
                     import requests
+                
+                    ref_url = char["reference_image_url"]
+                    print("CHARACTER REFERENCE URL:", ref_url)
+                
                     ref_resp = requests.get(
-    f"{SUPABASE_URL}/storage/v1/object/public/content-engine-media/{char['reference_image_path']}",
-    timeout=60,
-)
+                        ref_url,
+                        timeout=60,
+                    )
+                
                     if not ref_resp.ok:
-                        print("CHARACTER REFERENCE URL:", ref_url)
                         print("HTTP STATUS:", ref_resp.status_code)
                         print("RESPONSE BODY:", ref_resp.text[:1000])
+                
                     ref_resp.raise_for_status()
                     try:
                         img_bytes = pollinations.edit_scene(
