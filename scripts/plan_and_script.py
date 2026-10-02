@@ -12,17 +12,26 @@ from lib.kannada_text import sanitize_and_validate
 RETENTION_THRESHOLD = 7.0
 MAX_REGENERATIONS = 2
 
+"""
+# CONTENT_CALENDAR = {
+#    0: "Family comedy",
+#    1: "Family",
+#    2: "Moral stories",
+#    3: "Relationship stories",
+#    4: "Workplace comedy",
+#    5: "Children's stories",
+#    6: "Emotional stories",
+# }
+"""
 CONTENT_CALENDAR = {
-    0: "Family comedy",
-    1: "Family",
-    2: "Moral stories",
-    3: "Relationship stories",
-    4: "Workplace comedy",
-    5: "Children's stories",
-    6: "Emotional stories",
+    0: "Corporate Satire & Remote Work",
+    1: "Underconsumption Core / De-influencing",
+    2: "Chronically Online Lore Deep-Dives",
+    3: "Anti-Productivity & 'Bed Rotting' Comfort",
+    4: "Friendship Boundaries & Ghosting Realism",
+    5: "Post-Ironic Absurdist POVs",
+    6: "Corporate Speak Translations",
 }
-
-
 
 def pick_category() -> str:
     weekday = datetime.datetime.utcnow().weekday()
