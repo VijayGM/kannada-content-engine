@@ -203,22 +203,66 @@ def get_audio_duration(path: str) -> float:
     return float(out.stdout.strip())
 
 
-def write_srt(text: str, duration: float, path: str, max_words: int = 6):
+def _subtitle_chunks(text: str, max_words: int = 6) -> list[str]:
+    """Split only on whitespace; never alter Kannada Unicode characters."""
     text = sanitize_and_validate(text)
     words = text.split()
-    chunks = [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)] or [text]
-    per_chunk = duration / len(chunks)
+    return [" ".join(words[i:i + max_words]) for i in range(0, len(words), max_words)] or [text]
 
-    def fmt(t):
-        h, rem = divmod(t, 3600)
-        m, s = divmod(rem, 60)
-        ms = int((s % 1) * 1000)
-        return f"{int(h):02}:{int(m):02}:{int(s):02},{ms:03}"
+
+def _ass_time(seconds: float) -> str:
+    total_cs = max(0, int(round(seconds * 100)))
+    h, rem = divmod(total_cs, 360000)
+    m, rem = divmod(rem, 6000)
+    s, cs = divmod(rem, 100)
+    return f"{h}:{m:02}:{s:02}.{cs:02}"
+
+
+def write_ass(text: str, duration: float, path: str, max_words: int = 6, font_name: str = "Noto Sans Kannada"):
+    """Write UTF-8 ASS subtitles for libass/OpenType complex-script shaping.
+
+    The narration text is never transliterated, decomposed, or otherwise rewritten.
+    Only whitespace-based chunking is performed for subtitle timing.
+    """
+    chunks = _subtitle_chunks(text, max_words=max_words)
+    per_chunk = duration / len(chunks)
+    safe_font = font_name.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+    header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Kannada,{safe_font},16,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,100,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
 
     with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(header)
         for i, chunk in enumerate(chunks):
-            start, end = i * per_chunk, (i + 1) * per_chunk
-            f.write(f"{i+1}\n{fmt(start)} --> {fmt(end)}\n{chunk}\n\n")
+            start = i * per_chunk
+            end = (i + 1) * per_chunk
+            # ASS uses { } for override tags; escape literal braces if ever present.
+            ass_text = chunk.replace("{", "\\{").replace("}", "\\}")
+            f.write(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Kannada,,0,0,0,,{ass_text}\n")
+
+    # Read the file back and verify that every subtitle payload is exactly the
+    # expected Unicode chunk. This catches any accidental encoding/transcoding
+    # change before FFmpeg gets the file.
+    with open(path, "r", encoding="utf-8") as f:
+        rendered = []
+        for line in f:
+            if line.startswith("Dialogue:"):
+                rendered.append(line.rstrip("\n").split(",", 9)[-1].replace("\\{", "{").replace("\\}", "}"))
+    if rendered != chunks:
+        raise ValueError("Subtitle UTF-8 round-trip validation failed: narration text changed before FFmpeg rendering")
+
 
 
 def assemble_video(scenes: list[dict], workdir: str) -> str:
@@ -228,24 +272,23 @@ def assemble_video(scenes: list[dict], workdir: str) -> str:
     for i, sc in enumerate(scenes):
         img_path = os.path.join(workdir, f"img_{i}.png")
         audio_path = os.path.join(workdir, f"audio_{i}.wav")
-        srt_path = os.path.join(workdir, f"sub_{i}.srt")
+        ass_path = os.path.join(workdir, f"sub_{i}.ass")
         clip_path = os.path.join(workdir, f"clip_{i}.mp4")
         download(sc["image_url"], img_path)
         download(sc["audio_url"], audio_path)
 
         duration = get_audio_duration(audio_path)
-        write_srt(sc["narration_text"], duration, srt_path)
-        srt_filter_path = srt_path.replace("\\", "/").replace(":", "\\:")
+        write_ass(sc["narration_text"], duration, ass_path, font_name=font_name)
+        ass_filter_path = ass_path.replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+        fonts_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
+        fonts_dir = os.path.abspath(fonts_dir).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
         subprocess.run([
             "ffmpeg", "-y", "-loop", "1", "-i", img_path, "-i", audio_path,
             "-filter_complex",
             f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
             f"crop=1080:1920,zoompan=z='min(zoom+0.0015,1.3)':d={int(duration*25)}:s=1080x1920:fps=25,"
-            f"subtitles='{srt_filter_path}':force_style="
-            f"'FontName={font_name},FontSize=16,PrimaryColour=&HFFFFFF&,"
-            f"OutlineColour=&H000000&,BorderStyle=1,Outline=2,Alignment=2,"
-            f"MarginV=100,MarginL=60,MarginR=60'[v]",
+            f"ass='{ass_filter_path}':fontsdir='{fonts_dir}':shaping=complex[v]",
             "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-c:a", "aac",
             "-t", str(duration), "-shortest", clip_path,
         ], check=True, capture_output=True)
