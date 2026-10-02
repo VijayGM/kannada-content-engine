@@ -12,17 +12,6 @@ from lib.kannada_text import sanitize_and_validate
 RETENTION_THRESHOLD = 7.0
 MAX_REGENERATIONS = 2
 
-"""
-# CONTENT_CALENDAR = {
-#    0: "Family comedy",
-#    1: "Family",
-#    2: "Moral stories",
-#    3: "Relationship stories",
-#    4: "Workplace comedy",
-#    5: "Children's stories",
-#    6: "Emotional stories",
-# }
-"""
 CONTENT_CALENDAR = {
     0: "Corporate Satire & Remote Work",
     1: "Underconsumption Core / De-influencing",
