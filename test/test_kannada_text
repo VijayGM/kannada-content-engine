@@ -38,7 +38,7 @@ class KannadaTextTests(unittest.TestCase):
 
     def test_existing_replacement_character_fails(self):
         with self.assertRaises(ValueError):
-            sanitize_kannada("ಕನ್ನಡ   ಪರೀಕ್ಷೆ")
+            sanitize_kannada("ಕನ್ನಡ \ufffd ಪರೀಕ್ಷೆ")
 
     def test_romanized_kannada_fails_validation(self):
         with self.assertRaises(ValueError):
@@ -57,17 +57,38 @@ class KannadaTextTests(unittest.TestCase):
         from pathlib import Path
 
         ffmpeg = shutil.which("ffmpeg")
-        if not ffmpeg:
-            self.skipTest("ffmpeg is not installed")
+        fc_match = shutil.which("fc-match")
+        if not ffmpeg or not fc_match:
+            self.skipTest("ffmpeg/fontconfig is not installed")
+
+        font_result = subprocess.run(
+            [fc_match, "-f", "%{file}", "Noto Sans Kannada"],
+            capture_output=True, text=True, check=False,
+        )
+        font_file = font_result.stdout.strip()
+        if not font_file or not Path(font_file).is_file():
+            self.skipTest("Noto Sans Kannada font is not installed")
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            srt = tmp / "test.srt"
+            fonts = tmp / "fonts"
+            fonts.mkdir()
+            shutil.copy2(font_file, fonts / "NotoSansKannada-Regular.ttf")
+            ass = tmp / "test.ass"
             out = tmp / "frame.png"
 
-            srt.write_text(
-                "1\n00:00:00,000 --> 00:00:02,000\n"
-                "ಕನ್ನಡ ಪರೀಕ್ಷೆ — ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಸರಿಯಾಗಿ ಕಾಣಬೇಕು.\n\n",
+            text = "ಕನ್ನಡ ಪರೀಕ್ಷೆ — ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಸರಿಯಾಗಿ ಕಾಣಬೇಕು."
+            ass.write_text(
+                "[Script Info]\n"
+                "ScriptType: v4.00+\n"
+                "PlayResX: 1080\n"
+                "PlayResY: 1920\n\n"
+                "[V4+ Styles]\n"
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                "Style: Kannada,Noto Sans Kannada,42,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,150,1\n\n"
+                "[Events]\n"
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                f"Dialogue: 0,0:00:00.00,0:00:02.00,Kannada,,0,0,0,,{text}\n",
                 encoding="utf-8",
             )
 
@@ -76,24 +97,18 @@ class KannadaTextTests(unittest.TestCase):
                     ffmpeg, "-y",
                     "-f", "lavfi", "-i", "color=c=black:s=1080x1920:d=2:r=25",
                     "-vf",
-                    f"subtitles='{srt}':force_style="
-                    "'FontName=Noto Sans Kannada,FontSize=42,"
-                    "PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
-                    "BorderStyle=1,Outline=2,Alignment=2,MarginV=150'",
+                    f"ass='{ass}':fontsdir='{fonts}':shaping=complex",
                     "-frames:v", "1",
                     str(out),
                 ],
-                capture_output=True,
-                text=True,
-                check=False,
+                capture_output=True, text=True, check=False,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(out.exists())
             combined = result.stdout + result.stderr
-            self.assertIn("Noto Sans Kannada", combined)
-            # Current Ubuntu FFmpeg/libass stack should report HarfBuzz shaping.
             self.assertIn("HarfBuzz", combined)
+            self.assertIn("NotoSansKannada-Regular", combined)
 
 
 if __name__ == "__main__":
