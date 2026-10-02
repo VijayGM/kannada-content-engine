@@ -150,12 +150,58 @@ def build_scene_assets(story_id: str, category: str, scenes: list[dict], story: 
                         ref_url,
                         timeout=60,
                     )
-                
+                    
                     if not ref_resp.ok:
+                        print("CHARACTER REFERENCE MISSING")
                         print("HTTP STATUS:", ref_resp.status_code)
                         print("RESPONSE BODY:", ref_resp.text[:1000])
-                
-                    ref_resp.raise_for_status()
+                    
+                        # Reference image no longer exists in Supabase Storage.
+                        # Regenerate it using the existing character identity and seed.
+                        print("REGENERATING CHARACTER REFERENCE:", char["name"])
+                    
+                        reference_prompt = (
+                            f"{char['prompt_template']} "
+                            "Character design sheet, front-facing view, "
+                            "neutral expression, full body visible, plain background, "
+                            "consistent proportions."
+                        )
+                    
+                        img_bytes = pollinations.generate_reference(
+                            reference_prompt,
+                            seed=char["seed"],
+                        )
+                    
+                        new_path = f"characters/{uuid.uuid4()}.png"
+                    
+                        new_url = db.upload_to_storage(
+                            STORAGE_BUCKET,
+                            new_path,
+                            img_bytes,
+                            "image/png",
+                        )
+                    
+                        db.update(
+                            "characters",
+                            {"character_id": f"eq.{char['character_id']}"},
+                            {
+                                "reference_image_url": new_url,
+                                "reference_image_path": new_path,
+                            },
+                        )
+                    
+                        # Use the regenerated image immediately.
+                        ref_resp = requests.get(
+                            new_url,
+                            timeout=60,
+                        )
+                    
+                        ref_resp.raise_for_status()
+
+    print("CHARACTER REFERENCE REGENERATED:", new_url)
+
+else:
+    ref_resp.raise_for_status()
                     try:
                         img_bytes = pollinations.edit_scene(
                             reference_image_bytes=ref_resp.content,
