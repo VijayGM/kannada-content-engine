@@ -40,7 +40,7 @@ def recent_hooks(category: str, limit: int = 15) -> list[str]:
 def generate_concepts(category: str, avoid_hooks: list[str]) -> list[dict]:
     prompt = f"""You are a Kannada short-video story writer for Instagram.
 Category: {category}
-Generate 3 distinct story concepts for a spoken-Kannada narrated video, up to 7 minutes long.
+Generate 3 distinct story concepts for a spoken-Kannada narrated video, up to 5 minutes long.
 
 Avoid these already-used hooks (do not repeat the pattern or premise):
 {json.dumps(avoid_hooks, ensure_ascii=False)}
